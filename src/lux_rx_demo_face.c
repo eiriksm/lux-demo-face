@@ -176,6 +176,7 @@ static bool _decode_base32_payload(lux_rx_t *rx) {
 }
 
 static uint16_t read_light(void) {
+#ifdef HAS_IR_SENSOR
     HAL_GPIO_IR_ENABLE_out();
     HAL_GPIO_IR_ENABLE_clr();
     HAL_GPIO_IRSENSE_pmuxen(HAL_GPIO_PMUX_ADC);
@@ -187,6 +188,9 @@ static uint16_t read_light(void) {
     HAL_GPIO_IRSENSE_off();
     HAL_GPIO_IR_ENABLE_off();
     return val;
+#else
+    return 0;
+#endif
 }
 
 void lux_rx_demo_face_setup(uint8_t watch_face_index, void ** context_ptr) {
