@@ -111,12 +111,13 @@ static bool _handle_echo_redirect(const char *args, bool *ok) {
     }
 
     // Filename: everything after the redirect, minus surrounding spaces.
-    char filename[LUX_RX_MAX_PAYLOAD + 1];
+    char filename[LFS_NAME_MAX + 1];
     const char *name = redirect + (append ? 2 : 1);
     while (*name == ' ') name++;
     size_t name_len = strlen(name);
     while (name_len > 0 && name[name_len - 1] == ' ') name_len--;
-    if (name_len == 0 || memchr(name, ' ', name_len) || memchr(name, '/', name_len)) return true;
+    if (name_len == 0 || name_len > LFS_NAME_MAX ||
+        memchr(name, ' ', name_len) || memchr(name, '/', name_len)) return true;
     memcpy(filename, name, name_len);
     filename[name_len] = '\0';
 
@@ -134,42 +135,65 @@ static bool _handle_echo_redirect(const char *args, bool *ok) {
 // payload with the decoded text. This lets a sender use characters outside the
 // lux_rx alphabet. The lux_rx alphabet folds most uppercase letters to
 // lowercase, so matching is case-insensitive. Returns true if it decoded.
+//
+// The payload can be several KB, too much to copy on the stack, so it is
+// decoded one 8-char group at a time. Returns the number of bytes written to
+// `plain`, which needs room for 10; fewer than 5 means the data ended.
+static size_t _decode_base32_group(const char *coded, unsigned char *plain) {
+    unsigned char group[9];
+    for (uint8_t i = 0; i < 8; i++) {
+        char c = coded[i];
+        group[i] = (c >= 'a' && c <= 'z') ? c - 'a' + 'A' : c;
+    }
+    group[8] = '\0';
+    return base32_decode(group, plain);
+}
+
 static bool _decode_base32_payload(lux_rx_t *rx) {
-    uint8_t len = rx->payload_len;
+    uint16_t len = rx->payload_len;
     if (len == 0 || len % 8 != 0) return false;
 
-    char coded[LUX_RX_MAX_PAYLOAD + 1];
     bool in_padding = false;
     // Plain words like "password" are valid base32 too, so require a digit or
     // padding, which plain text rarely has.
     bool has_digit_or_padding = false;
-    for (uint8_t i = 0; i < len; i++) {
+    for (uint16_t i = 0; i < len; i++) {
         char c = rx->payload[i];
         if (c == '=') {
             in_padding = true;
             has_digit_or_padding = true;
         } else if (in_padding) {
             return false;
-        } else if (c >= 'a' && c <= 'z') {
-            c = c - 'a' + 'A';
         } else if (c >= '2' && c <= '7') {
             has_digit_or_padding = true;
-        } else if (!(c >= 'A' && c <= 'Z')) {
+        } else if (!(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z')) {
             return false;
         }
-        coded[i] = c;
     }
     if (!has_digit_or_padding) return false;
-    coded[len] = '\0';
 
-    unsigned char plain[UNBASE32_LEN(LUX_RX_MAX_PAYLOAD) + 1];
-    size_t plain_len = base32_decode((unsigned char *)coded, plain);
-    if (plain_len == 0) return false;
-    for (size_t i = 0; i < plain_len; i++) {
-        if ((plain[i] < 0x20 || plain[i] > 0x7e) && plain[i] != '\n') return false;
+    // First pass: check that it decodes to text, leaving the payload untouched.
+    unsigned char plain[10];
+    size_t plain_len = 0;
+    for (uint16_t i = 0; i < len; i += 8) {
+        size_t n = _decode_base32_group(rx->payload + i, plain);
+        for (size_t j = 0; j < n; j++) {
+            if ((plain[j] < 0x20 || plain[j] > 0x7e) && plain[j] != '\n') return false;
+        }
+        plain_len += n;
+        if (n < 5) break;
     }
+    if (plain_len == 0) return false;
 
-    memcpy(rx->payload, plain, plain_len);
+    // Second pass: decode in place. Group k is read before its bytes are
+    // written at 5k, which stays behind the start of group k+1 at 8(k+1).
+    size_t out = 0;
+    for (uint16_t i = 0; i < len; i += 8) {
+        size_t n = _decode_base32_group(rx->payload + i, plain);
+        memcpy(rx->payload + out, plain, n);
+        out += n;
+        if (n < 5) break;
+    }
     rx->payload[plain_len] = '\0';
     rx->payload_len = plain_len;
     return true;
