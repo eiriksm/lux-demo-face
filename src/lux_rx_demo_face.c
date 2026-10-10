@@ -408,7 +408,8 @@ bool lux_rx_demo_face_loop(movement_event_t event, void *context) {
             break;
 
         case EVENT_TIMEOUT:
-            movement_move_to_face(0);
+            // Stay on this face: a long frame takes far longer than the
+            // inactivity timeout to arrive.
             break;
 
         default:
