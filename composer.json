@@ -1,0 +1,8 @@
+{
+    "name": "eiriksm/lux-demo-face",
+    "description": "Second Movement watch face that receives text over light with lux_rx",
+    "license": "MIT",
+    "require": {
+        "eiriksm/lux-rx": "dev-main"
+    }
+}
