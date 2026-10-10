@@ -131,7 +131,36 @@ static bool _handle_echo_redirect(const char *args, bool *ok) {
     return true;
 }
 
-// If the payload looks like base32 and decodes to printable text, replaces the
+// Checks one byte of decoded base32 for being UTF-8 text: no control characters
+// other than tab, newline and carriage return. Random bytes rarely pass, so
+// this keeps plain text that happens to look like base32 from being decoded.
+// `pending` carries the number of continuation bytes still expected.
+static bool _is_text_byte(uint8_t b, uint8_t *pending) {
+    if (*pending) {
+        if ((b & 0xC0) != 0x80) return false;
+        (*pending)--;
+        return true;
+    }
+    if (b < 0x80) return (b >= 0x20 && b != 0x7f) || b == '\t' || b == '\n' || b == '\r';
+    if (b >= 0xC2 && b <= 0xDF) *pending = 1;
+    else if (b >= 0xE0 && b <= 0xEF) *pending = 2;
+    else if (b >= 0xF0 && b <= 0xF4) *pending = 3;
+    else return false;
+    return true;
+}
+
+// Writes " <first 5 chars>" to buf (7 bytes) for the bottom display. The
+// display only has glyphs for printable ASCII, so other bytes show as spaces.
+static void _display_preview(char *buf, const char *text) {
+    buf[0] = ' ';
+    for (uint8_t i = 1; i < 6; i++) {
+        char c = *text ? *text++ : ' ';
+        buf[i] = (c >= 0x20 && c <= 0x7e) ? c : ' ';
+    }
+    buf[6] = '\0';
+}
+
+// If the payload looks like base32 and decodes to UTF-8 text, replaces the
 // payload with the decoded text. This lets a sender use characters outside the
 // lux_rx alphabet. The lux_rx alphabet folds most uppercase letters to
 // lowercase, so matching is case-insensitive. Returns true if it decoded.
@@ -175,15 +204,16 @@ static bool _decode_base32_payload(lux_rx_t *rx) {
     // First pass: check that it decodes to text, leaving the payload untouched.
     unsigned char plain[10];
     size_t plain_len = 0;
+    uint8_t pending = 0;
     for (uint16_t i = 0; i < len; i += 8) {
         size_t n = _decode_base32_group(rx->payload + i, plain);
         for (size_t j = 0; j < n; j++) {
-            if ((plain[j] < 0x20 || plain[j] > 0x7e) && plain[j] != '\n') return false;
+            if (!_is_text_byte(plain[j], &pending)) return false;
         }
         plain_len += n;
         if (n < 5) break;
     }
-    if (plain_len == 0) return false;
+    if (plain_len == 0 || pending) return false;
 
     // Second pass: decode in place. Group k is read before its bytes are
     // written at 5k, which stays behind the start of group k+1 at 8(k+1).
@@ -299,7 +329,7 @@ bool lux_rx_demo_face_loop(movement_event_t event, void *context) {
                     if (ctx->rx.payload_len > 5 && strncmp(ctx->rx.payload, "echo ", 5) == 0) {
                         const char *msg = ctx->rx.payload + 5;
                         watch_display_text_with_fallback(WATCH_POSITION_TOP, "ECHO ", "EC");
-                        snprintf(buf, 7, " %s    ", msg);
+                        _display_preview(buf, msg);
                         watch_display_text(WATCH_POSITION_BOTTOM, buf);
                         movement_force_led_on(0, 48, 0);
                         if (just_changed && fesk_session_is_idle(&ctx->session)) {
@@ -341,7 +371,7 @@ bool lux_rx_demo_face_loop(movement_event_t event, void *context) {
                         break;
                     }
                     watch_display_text_with_fallback(WATCH_POSITION_TOP, "RECV ", "RC");
-                    snprintf(buf, 7, " %s    ", ctx->rx.payload);
+                    _display_preview(buf, ctx->rx.payload);
                     watch_display_text(WATCH_POSITION_BOTTOM, buf);
                     movement_force_led_on(0, 48, 0);
                     if (just_changed)
