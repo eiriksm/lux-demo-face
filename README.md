@@ -3,7 +3,7 @@ A [Second Movement](https://github.com/joeycastillo/second-movement) watch face 
 
 ## Description
 
-Samples the OPT3001 light sensor and decodes text sent as blinking light. Received text can set the time, be echoed back over FESK, or be written to files on the watch. See `src/lux_rx_demo_face.h` for the commands and buttons.
+Samples the watch's IR light sensor (read through the ADC, so it needs a board built with `HAS_IR_SENSOR`) and decodes text sent as blinking light. Received text can set the time, be echoed back over FESK, or be written to files on the watch. See `src/lux_rx_demo_face.h` for the commands and buttons.
 
 ## Installation
 
