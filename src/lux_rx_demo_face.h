@@ -29,7 +29,9 @@
 /*
  * LUX RX DEMO FACE
  *
- * Receives text via the OPT3001 visible light sensor using the lux_rx 6-bit protocol.
+ * Receives text via the IR light sensor using the lux_rx 6-bit protocol.
+ * The sensor is read through the ADC on the IRSENSE pin, so the face only
+ * receives on boards built with HAS_IR_SENSOR.
  *
  * Display:
  *   WAIT   — idle, waiting for START symbol
