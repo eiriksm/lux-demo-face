@@ -260,7 +260,7 @@ void lux_rx_demo_face_activate(void *context) {
 
     lux_rx_init(&ctx->rx);
 
-    movement_request_tick_frequency(64);
+    movement_request_tick_frequency(LUX_RX_SAMPLE_RATE_HZ);
 }
 
 bool lux_rx_demo_face_loop(movement_event_t event, void *context) {
@@ -296,8 +296,8 @@ bool lux_rx_demo_face_loop(movement_event_t event, void *context) {
                     if (is_timestamp) {
                         if (just_changed) {
                             uint32_t timestamp = strtoul(ctx->rx.payload, NULL, 10);
-                            // Compensate for transmission time (tick_count is at 64 Hz)
-                            timestamp += ctx->rx.tick_count / 64;
+                            // Compensate for transmission time (tick_count is in samples)
+                            timestamp += ctx->rx.tick_count / LUX_RX_SAMPLE_RATE_HZ;
                             movement_set_utc_timestamp(timestamp);
                             movement_play_sequence(time_set_seq, BUZZER_PRIORITY_ALARM);
                         }
